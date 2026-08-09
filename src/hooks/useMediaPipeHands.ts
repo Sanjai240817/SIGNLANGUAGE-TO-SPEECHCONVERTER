@@ -8,69 +8,7 @@ import {
 import { predictASL } from "@/lib/gestureClassifier";
 
 // ============================================================
-// NORMALIZE MEDIAPIPE LANDMARKS
-// Must match Python training code exactly
-// ============================================================
-
-function normalizeLandmarks(landmarks: any[]): number[] {
-  const points = landmarks.map((p) => [
-    Number(p.x),
-    Number(p.y),
-    Number(p.z),
-  ]);
-
-  // Safety check
-  if (points.length !== 21) {
-    console.error(
-      "Expected 21 hand landmarks, received:",
-      points.length
-    );
-
-    return [];
-  }
-
-  // ----------------------------------------------------------
-  // Wrist = landmark 0
-  // ----------------------------------------------------------
-
-  const wrist = [...points[0]];
-
-  // Move wrist to origin
-  for (let i = 0; i < points.length; i++) {
-    points[i][0] -= wrist[0];
-    points[i][1] -= wrist[1];
-    points[i][2] -= wrist[2];
-  }
-
-  // ----------------------------------------------------------
-  // Middle MCP = landmark 9
-  // Same as Python training
-  // ----------------------------------------------------------
-
-  const middleMCP = points[9];
-
-  const scale = Math.sqrt(
-    middleMCP[0] ** 2 +
-      middleMCP[1] ** 2 +
-      middleMCP[2] ** 2
-  );
-
-  const safeScale =
-    scale < 0.000001 ? 1.0 : scale;
-
-  // Scale landmarks
-  for (let i = 0; i < points.length; i++) {
-    points[i][0] /= safeScale;
-    points[i][1] /= safeScale;
-    points[i][2] /= safeScale;
-  }
-
-  // 21 landmarks × 3 coordinates = 63 features
-  return points.flat();
-}
-
-// ============================================================
-// MEDIAPIPE TYPE
+// TYPES
 // ============================================================
 
 interface MediaPipeHandsInstance {
@@ -95,8 +33,27 @@ interface MediaPipeHandsInstance {
   close?: () => void;
 }
 
+interface MediaPipeWindow {
+  Hands?: new (config: {
+    locateFile: (file: string) => string;
+  }) => MediaPipeHandsInstance;
+
+  HAND_CONNECTIONS?: any;
+
+  drawConnectors?: (
+    ctx: CanvasRenderingContext2D,
+    landmarks: any[],
+    connections: any
+  ) => void;
+
+  drawLandmarks?: (
+    ctx: CanvasRenderingContext2D,
+    landmarks: any[]
+  ) => void;
+}
+
 // ============================================================
-// DETECTED GESTURE RESULT
+// DETECTED GESTURE
 // ============================================================
 
 export interface DetectedGestureResult {
@@ -104,6 +61,222 @@ export interface DetectedGestureResult {
   confidence: number;
   handCount: number;
   timestamp: number;
+}
+
+// ============================================================
+// MEDIAPIPE CDN
+// ============================================================
+
+const MEDIAPIPE_HANDS_SCRIPT =
+  "https://cdn.jsdelivr.net/npm/@mediapipe/hands/hands.js";
+
+const MEDIAPIPE_DRAWING_SCRIPT =
+  "https://cdn.jsdelivr.net/npm/@mediapipe/drawing_utils/drawing_utils.js";
+
+const MEDIAPIPE_ASSET_URL =
+  "https://cdn.jsdelivr.net/npm/@mediapipe/hands/";
+
+let mediaPipeLoadingPromise: Promise<void> | null = null;
+
+// ============================================================
+// LOAD SCRIPT
+// ============================================================
+
+function loadScript(src: string): Promise<void> {
+  return new Promise((resolve, reject) => {
+    const existingScript = document.querySelector(
+      `script[src="${src}"]`
+    );
+
+    if (existingScript) {
+      resolve();
+      return;
+    }
+
+    const script = document.createElement("script");
+
+    script.src = src;
+    script.async = true;
+
+    script.onload = () => {
+      console.log("✅ MediaPipe script loaded:", src);
+      resolve();
+    };
+
+    script.onerror = () => {
+      reject(
+        new Error(
+          `Failed to load MediaPipe script: ${src}`
+        )
+      );
+    };
+
+    document.head.appendChild(script);
+  });
+}
+
+// ============================================================
+// LOAD MEDIAPIPE
+// ============================================================
+
+async function loadMediaPipe(): Promise<void> {
+  if (typeof window === "undefined") {
+    throw new Error(
+      "MediaPipe can only run in the browser."
+    );
+  }
+
+  if (mediaPipeLoadingPromise) {
+    return mediaPipeLoadingPromise;
+  }
+
+  const win =
+    window as unknown as MediaPipeWindow;
+
+  if (
+    win.Hands &&
+    win.HAND_CONNECTIONS &&
+    win.drawConnectors &&
+    win.drawLandmarks
+  ) {
+    console.log(
+      "✅ MediaPipe already available"
+    );
+
+    return;
+  }
+
+  mediaPipeLoadingPromise = (async () => {
+    console.log(
+      "📦 Loading MediaPipe from CDN..."
+    );
+
+    await loadScript(
+      MEDIAPIPE_DRAWING_SCRIPT
+    );
+
+    await loadScript(
+      MEDIAPIPE_HANDS_SCRIPT
+    );
+
+    const currentWindow =
+      window as unknown as MediaPipeWindow;
+
+    if (!currentWindow.Hands) {
+      throw new Error(
+        "MediaPipe Hands constructor was not loaded."
+      );
+    }
+
+    if (!currentWindow.HAND_CONNECTIONS) {
+      throw new Error(
+        "MediaPipe HAND_CONNECTIONS was not loaded."
+      );
+    }
+
+    if (!currentWindow.drawConnectors) {
+      throw new Error(
+        "MediaPipe drawConnectors was not loaded."
+      );
+    }
+
+    if (!currentWindow.drawLandmarks) {
+      throw new Error(
+        "MediaPipe drawLandmarks was not loaded."
+      );
+    }
+
+    console.log(
+      "✅ MediaPipe loaded successfully"
+    );
+  })();
+
+  try {
+    await mediaPipeLoadingPromise;
+  } catch (error) {
+    mediaPipeLoadingPromise = null;
+    throw error;
+  }
+}
+
+// ============================================================
+// NORMALIZE LANDMARKS
+// MUST MATCH PYTHON TRAINING
+// ============================================================
+
+function normalizeLandmarks(
+  landmarks: any[]
+): number[] {
+  const points = landmarks.map((p) => [
+    Number(p.x),
+    Number(p.y),
+    Number(p.z),
+  ]);
+
+  // ----------------------------------------------------------
+  // SAFETY CHECK
+  // ----------------------------------------------------------
+
+  if (points.length !== 21) {
+    console.error(
+      "❌ Expected 21 hand landmarks, received:",
+      points.length
+    );
+
+    return [];
+  }
+
+  // ----------------------------------------------------------
+  // WRIST = LANDMARK 0
+  // ----------------------------------------------------------
+
+  const wrist = [
+    points[0][0],
+    points[0][1],
+    points[0][2],
+  ];
+
+  // ----------------------------------------------------------
+  // MOVE WRIST TO ORIGIN
+  // ----------------------------------------------------------
+
+  for (let i = 0; i < points.length; i++) {
+    points[i][0] -= wrist[0];
+    points[i][1] -= wrist[1];
+    points[i][2] -= wrist[2];
+  }
+
+  // ----------------------------------------------------------
+  // MIDDLE MCP = LANDMARK 9
+  // SAME AS PYTHON
+  // ----------------------------------------------------------
+
+  const middleMCP = points[9];
+
+  const scale = Math.sqrt(
+    middleMCP[0] ** 2 +
+      middleMCP[1] ** 2 +
+      middleMCP[2] ** 2
+  );
+
+  const safeScale =
+    scale < 0.000001 ? 1.0 : scale;
+
+  // ----------------------------------------------------------
+  // SCALE
+  // ----------------------------------------------------------
+
+  for (let i = 0; i < points.length; i++) {
+    points[i][0] /= safeScale;
+    points[i][1] /= safeScale;
+    points[i][2] /= safeScale;
+  }
+
+  // ----------------------------------------------------------
+  // 21 × 3 = 63
+  // ----------------------------------------------------------
+
+  return points.flat();
 }
 
 // ============================================================
@@ -126,31 +299,36 @@ export const useMediaPipeHands = (
     useRef<HTMLCanvasElement | null>(null);
 
   const handsRef =
-    useRef<MediaPipeHandsInstance | null>(null);
+    useRef<MediaPipeHandsInstance | null>(
+      null
+    );
 
   const frameRequestRef =
     useRef<number | null>(null);
 
-  // Keep latest callback
+  const startingCameraRef =
+    useRef(false);
+
+  const cameraOperationRef =
+    useRef(0);
+
+  const processingFrameRef =
+    useRef(false);
+
+  // ==========================================================
+  // CALLBACK REF
+  // ==========================================================
+
   const onGestureDetectedRef =
     useRef(onGestureDetected);
 
   onGestureDetectedRef.current =
     onGestureDetected;
 
-  // Prevent duplicate camera starts
-  const startingCameraRef =
-    useRef(false);
+  // ==========================================================
+  // STABILITY
+  // ==========================================================
 
-  // Used to invalidate old camera operations
-  const cameraOperationRef =
-    useRef(0);
-
-  // Prevent overlapping MediaPipe frames
-  const processingFrameRef =
-    useRef(false);
-
-  // Gesture stability
   const lastGestureRef =
     useRef<string | null>(null);
 
@@ -177,7 +355,9 @@ export const useMediaPipeHands = (
     useState(false);
 
   const [detectedGesture, setDetectedGesture] =
-    useState<DetectedGestureResult | null>(null);
+    useState<DetectedGestureResult | null>(
+      null
+    );
 
   const [confidence, setConfidence] =
     useState(0);
@@ -189,536 +369,386 @@ export const useMediaPipeHands = (
   // START CAMERA
   // ==========================================================
 
-  const startCamera = useCallback(async () => {
-    // Prevent two starts
-    if (startingCameraRef.current) {
-      console.log(
-        "⚠️ Camera start already in progress"
-      );
-      return;
-    }
-
-    // Already running
-    if (
-      handsRef.current &&
-      videoRef.current?.srcObject
-    ) {
-      console.log(
-        "⚠️ Camera already running"
-      );
-      return;
-    }
-
-    startingCameraRef.current = true;
-
-    const operationId =
-      ++cameraOperationRef.current;
-
-    try {
-      setError(null);
-      setIsLoading(true);
-
-      console.log(
-        "📸 Starting camera..."
-      );
-
-      const video = videoRef.current;
-
-      if (!video) {
-        throw new Error(
-          "Video element not available"
-        );
-      }
-
-      // ======================================================
-      // CLEAN OLD FRAME LOOP
-      // ======================================================
-
-      if (
-        frameRequestRef.current !== null
-      ) {
-        cancelAnimationFrame(
-          frameRequestRef.current
+  const startCamera = useCallback(
+    async () => {
+      if (startingCameraRef.current) {
+        console.log(
+          "⚠️ Camera start already in progress"
         );
 
-        frameRequestRef.current = null;
+        return;
       }
-
-      processingFrameRef.current = false;
-
-      // ======================================================
-      // CLOSE OLD MEDIAPIPE
-      // ======================================================
-
-      if (handsRef.current?.close) {
-        try {
-          handsRef.current.close();
-        } catch (err) {
-          console.warn(
-            "Old MediaPipe close warning:",
-            err
-          );
-        }
-      }
-
-      handsRef.current = null;
-
-      // ======================================================
-      // CHECK CAMERA
-      // ======================================================
 
       if (
-        !navigator.mediaDevices ||
-        !navigator.mediaDevices.getUserMedia
-      ) {
-        throw new Error(
-          "Camera is not supported by this browser"
-        );
-      }
-
-      console.log(
-        "📷 Requesting camera permission..."
-      );
-
-      // ======================================================
-      // GET CAMERA
-      // ======================================================
-
-      const stream =
-        await navigator.mediaDevices.getUserMedia({
-          video: {
-            facingMode: "user",
-
-            width: {
-              ideal: 1280,
-            },
-
-            height: {
-              ideal: 720,
-            },
-
-            frameRate: {
-              ideal: 30,
-              max: 30,
-            },
-          },
-
-          audio: false,
-        });
-
-      // Ignore old request
-      if (
-        operationId !==
-        cameraOperationRef.current
+        handsRef.current &&
+        videoRef.current?.srcObject
       ) {
         console.log(
-          "⚠️ Old camera request ignored"
+          "⚠️ Camera already running"
         );
-
-        stream
-          .getTracks()
-          .forEach((track) =>
-            track.stop()
-          );
 
         return;
       }
 
-      // ======================================================
-      // STOP OLD VIDEO STREAM
-      // ======================================================
+      startingCameraRef.current = true;
 
-      const oldStream =
-        video.srcObject;
-
-      if (
-        oldStream instanceof MediaStream
-      ) {
-        oldStream
-          .getTracks()
-          .forEach((track) =>
-            track.stop()
-          );
-      }
-
-      // ======================================================
-      // ATTACH NEW STREAM
-      // ======================================================
-
-      video.srcObject = stream;
-
-      video.autoplay = true;
-      video.playsInline = true;
-      video.muted = true;
-
-      // Wait for metadata
-      if (
-        video.readyState <
-        HTMLMediaElement.HAVE_METADATA
-      ) {
-        await new Promise<void>(
-          (resolve) => {
-            const handleMetadata =
-              () => {
-                video.removeEventListener(
-                  "loadedmetadata",
-                  handleMetadata
-                );
-
-                resolve();
-              };
-
-            video.addEventListener(
-              "loadedmetadata",
-              handleMetadata
-            );
-          }
-        );
-      }
-
-      // Check operation again
-      if (
-        operationId !==
-        cameraOperationRef.current
-      ) {
-        stream
-          .getTracks()
-          .forEach((track) =>
-            track.stop()
-          );
-
-        return;
-      }
-
-      // ======================================================
-      // PLAY VIDEO
-      // ======================================================
+      const operationId =
+        ++cameraOperationRef.current;
 
       try {
+        setError(null);
+        setIsLoading(true);
+
+        console.log(
+          "📸 Starting camera..."
+        );
+
+        const video =
+          videoRef.current;
+
+        if (!video) {
+          throw new Error(
+            "Video element not available"
+          );
+        }
+
+        // ====================================================
+        // STOP OLD FRAME LOOP
+        // ====================================================
+
+        if (
+          frameRequestRef.current !== null
+        ) {
+          cancelAnimationFrame(
+            frameRequestRef.current
+          );
+
+          frameRequestRef.current = null;
+        }
+
+        processingFrameRef.current =
+          false;
+
+        // ====================================================
+        // CLOSE OLD MEDIAPIPE
+        // ====================================================
+
+        if (handsRef.current?.close) {
+          try {
+            handsRef.current.close();
+          } catch (error) {
+            console.warn(
+              "Old MediaPipe close warning:",
+              error
+            );
+          }
+        }
+
+        handsRef.current = null;
+
+        // ====================================================
+        // CHECK CAMERA SUPPORT
+        // ====================================================
+
+        if (
+          !navigator.mediaDevices ||
+          !navigator.mediaDevices
+            .getUserMedia
+        ) {
+          throw new Error(
+            "Camera is not supported by this browser."
+          );
+        }
+
+        // ====================================================
+        // CAMERA PERMISSION
+        // ====================================================
+
+        console.log(
+          "📷 Requesting camera permission..."
+        );
+
+        const stream =
+          await navigator.mediaDevices.getUserMedia(
+            {
+              video: {
+                facingMode: "user",
+
+                width: {
+                  ideal: 1280,
+                },
+
+                height: {
+                  ideal: 720,
+                },
+
+                frameRate: {
+                  ideal: 30,
+                  max: 30,
+                },
+              },
+
+              audio: false,
+            }
+          );
+
+        // ====================================================
+        // IGNORE OLD CAMERA REQUEST
+        // ====================================================
+
+        if (
+          operationId !==
+          cameraOperationRef.current
+        ) {
+          stream
+            .getTracks()
+            .forEach((track) =>
+              track.stop()
+            );
+
+          return;
+        }
+
+        // ====================================================
+        // STOP OLD STREAM
+        // ====================================================
+
+        const oldStream =
+          video.srcObject;
+
+        if (
+          oldStream instanceof MediaStream
+        ) {
+          oldStream
+            .getTracks()
+            .forEach((track) =>
+              track.stop()
+            );
+        }
+
+        // ====================================================
+        // ATTACH CAMERA
+        // ====================================================
+
+        video.srcObject = stream;
+
+        video.autoplay = true;
+        video.playsInline = true;
+        video.muted = true;
+
+        // ====================================================
+        // WAIT FOR VIDEO
+        // ====================================================
+
+        if (
+          video.readyState <
+          HTMLMediaElement.HAVE_METADATA
+        ) {
+          await new Promise<void>(
+            (resolve) => {
+              const handleMetadata =
+                () => {
+                  video.removeEventListener(
+                    "loadedmetadata",
+                    handleMetadata
+                  );
+
+                  resolve();
+                };
+
+              video.addEventListener(
+                "loadedmetadata",
+                handleMetadata
+              );
+            }
+          );
+        }
+
+        // ====================================================
+        // PLAY
+        // ====================================================
+
         await video.play();
 
         console.log(
           "▶️ Video playing"
         );
-      } catch (playError) {
-        console.warn(
-          "Video play warning:",
-          playError
+
+        // ====================================================
+        // LOAD MEDIAPIPE FROM CDN
+        // ====================================================
+
+        await loadMediaPipe();
+
+        // ====================================================
+        // CHECK OPERATION
+        // ====================================================
+
+        if (
+          operationId !==
+          cameraOperationRef.current
+        ) {
+          stream
+            .getTracks()
+            .forEach((track) =>
+              track.stop()
+            );
+
+          return;
+        }
+
+        const win =
+          window as unknown as MediaPipeWindow;
+
+        if (!win.Hands) {
+          throw new Error(
+            "MediaPipe Hands is unavailable."
+          );
+        }
+
+        if (!win.HAND_CONNECTIONS) {
+          throw new Error(
+            "MediaPipe HAND_CONNECTIONS is unavailable."
+          );
+        }
+
+        if (!win.drawConnectors) {
+          throw new Error(
+            "MediaPipe drawing utilities unavailable."
+          );
+        }
+
+        if (!win.drawLandmarks) {
+          throw new Error(
+            "MediaPipe drawing utilities unavailable."
+          );
+        }
+
+        console.log(
+          "✅ MediaPipe modules loaded"
         );
 
-        try {
-          await video.play();
-        } catch (secondPlayError) {
-          console.error(
-            "❌ Video play failed:",
-            secondPlayError
-          );
+        // ====================================================
+        // CREATE HANDS
+        // ====================================================
 
-          throw secondPlayError;
-        }
-      }
+        const hands =
+          new win.Hands({
+            locateFile: (
+              file: string
+            ) => {
+              const url =
+                `${MEDIAPIPE_ASSET_URL}${file}`;
 
-      // ======================================================
-      // LOAD MEDIAPIPE
-      // ======================================================
-
-      const {
-        Hands,
-        HAND_CONNECTIONS,
-      } = await import(
-        "@mediapipe/hands"
-      );
-
-      const {
-        drawConnectors,
-        drawLandmarks,
-      } = await import(
-        "@mediapipe/drawing_utils"
-      );
-
-      // Check operation
-      if (
-        operationId !==
-        cameraOperationRef.current
-      ) {
-        stream
-          .getTracks()
-          .forEach((track) =>
-            track.stop()
-          );
-
-        return;
-      }
-
-      console.log(
-        "✅ MediaPipe modules loaded"
-      );
-
-      // ======================================================
-      // MEDIAPIPE FILE PATH
-      // ======================================================
-
-      const baseUrl =
-        import.meta.env.BASE_URL || "/";
-
-      const normalizedBase =
-        baseUrl.endsWith("/")
-          ? baseUrl.slice(0, -1)
-          : baseUrl;
-
-      // ======================================================
-      // CREATE MEDIAPIPE
-      // ======================================================
-
-      const hands =
-        new Hands({
-          locateFile: (
-            file: string
-          ) => {
-            const path =
-              `${normalizedBase}/mediapipe-hands/${file}`;
-
-            console.log(
-              "📦 MediaPipe file:",
-              path
-            );
-
-            return path;
-          },
-        }) as unknown as MediaPipeHandsInstance;
-
-      handsRef.current = hands;
-
-      // ======================================================
-      // MEDIAPIPE SETTINGS
-      // ======================================================
-
-      hands.setOptions({
-        selfieMode: false,
-
-        // ASL uses one hand
-        maxNumHands: 1,
-
-        modelComplexity: 1,
-
-        minDetectionConfidence: 0.70,
-
-        minTrackingConfidence: 0.70,
-      });
-
-      console.log(
-        "✅ MediaPipe configured"
-      );
-
-      // ======================================================
-      // MEDIAPIPE RESULTS
-      // ======================================================
-
-      hands.onResults(
-        async (results) => {
-          // Ignore old camera operation
-          if (
-            operationId !==
-            cameraOperationRef.current
-          ) {
-            return;
-          }
-
-          const canvas =
-            canvasRef.current;
-
-          const videoElement =
-            videoRef.current;
-
-          if (
-            !canvas ||
-            !videoElement
-          ) {
-            return;
-          }
-
-          const ctx =
-            canvas.getContext("2d");
-
-          if (!ctx) {
-            return;
-          }
-
-          // ==================================================
-          // CANVAS SIZE
-          // ==================================================
-
-          if (
-            videoElement.videoWidth > 0 &&
-            videoElement.videoHeight > 0
-          ) {
-            canvas.width =
-              videoElement.videoWidth;
-
-            canvas.height =
-              videoElement.videoHeight;
-          }
-
-          ctx.clearRect(
-            0,
-            0,
-            canvas.width,
-            canvas.height
-          );
-
-          // ==================================================
-          // HANDS
-          // ==================================================
-
-          const handsDetected =
-            results.multiHandLandmarks;
-
-          // ==================================================
-          // NO HAND
-          // ==================================================
-
-          if (
-            !handsDetected ||
-            handsDetected.length === 0
-          ) {
-            setHandDetected(false);
-
-            setDetectedGesture(null);
-
-            setConfidence(0);
-
-            stableFramesRef.current = 0;
-
-            lastGestureRef.current =
-              null;
-
-            confirmedGestureRef.current =
-              null;
-
-            return;
-          }
-
-          // ==================================================
-          // HAND FOUND
-          // ==================================================
-
-          setHandDetected(true);
-
-          // ==================================================
-          // DRAW LANDMARKS
-          // ==================================================
-
-          for (
-            const landmarks of handsDetected
-          ) {
-            drawConnectors(
-              ctx,
-              landmarks,
-              HAND_CONNECTIONS
-            );
-
-            drawLandmarks(
-              ctx,
-              landmarks
-            );
-          }
-
-          // ==================================================
-          // GET FIRST HAND
-          // ==================================================
-
-          const handLandmarks =
-            handsDetected[0];
-
-          // ==================================================
-          // NORMALIZE 21 LANDMARKS
-          // ==================================================
-
-          const normalizedLandmarks =
-            normalizeLandmarks(
-              handLandmarks
-            );
-
-          console.log(
-            "Normalized landmarks:",
-            normalizedLandmarks.length
-          );
-
-          // Must be exactly 63
-          if (
-            normalizedLandmarks.length !==
-            63
-          ) {
-            console.error(
-              "❌ Expected 63 normalized landmarks, received:",
-              normalizedLandmarks.length
-            );
-
-            return;
-          }
-
-          // ==================================================
-          // ONNX CLASSIFICATION
-          // ==================================================
-
-          try {
-            const prediction =
-              await predictASL(
-                normalizedLandmarks
+              console.log(
+                "📦 MediaPipe file:",
+                url
               );
 
-            // IMPORTANT:
-            // predictASL returns:
-            //
-            // {
-            //   letter: string,
-            //   confidence: number
-            // }
+              return url;
+            },
+          });
 
-            const letter =
-              prediction.letter;
+        handsRef.current =
+          hands;
 
-            const gestureConfidence =
-              prediction.confidence;
+        // ====================================================
+        // MEDIAPIPE SETTINGS
+        // ====================================================
 
-            console.log(
-              `🤖 ASL Prediction: ${letter}`
-            );
+        hands.setOptions({
+          selfieMode: false,
 
-            console.log(
-              `🎯 Confidence: ${(gestureConfidence * 100).toFixed(2)}%`
-            );
+          maxNumHands: 1,
 
-            // ==================================================
-            // UPDATE CONFIDENCE
-            // ==================================================
+          modelComplexity: 1,
 
-            setConfidence(
-              gestureConfidence
-            );
+          minDetectionConfidence: 0.70,
 
-            // ==================================================
-            // CONFIDENCE THRESHOLD
-            // ==================================================
+          minTrackingConfidence: 0.70,
+        });
 
-            const CONFIDENCE_THRESHOLD =
-              0.20;
+        console.log(
+          "✅ MediaPipe configured"
+        );
+
+        // ====================================================
+        // RESULTS
+        // ====================================================
+
+        hands.onResults(
+          async (results) => {
+            if (
+              operationId !==
+              cameraOperationRef.current
+            ) {
+              return;
+            }
+
+            const canvas =
+              canvasRef.current;
+
+            const videoElement =
+              videoRef.current;
 
             if (
-              !letter ||
-              letter === "?" ||
-              letter === "UNKNOWN" ||
-              !Number.isFinite(
-                gestureConfidence
-              ) ||
-              gestureConfidence <
-                CONFIDENCE_THRESHOLD
+              !canvas ||
+              !videoElement
             ) {
-              console.log(
-                "⚠️ Gesture rejected because confidence is too low"
-              );
+              return;
+            }
+
+            const ctx =
+              canvas.getContext("2d");
+
+            if (!ctx) {
+              return;
+            }
+
+            // ==================================================
+            // CANVAS SIZE
+            // ==================================================
+
+            if (
+              videoElement.videoWidth >
+                0 &&
+              videoElement.videoHeight >
+                0
+            ) {
+              canvas.width =
+                videoElement.videoWidth;
+
+              canvas.height =
+                videoElement.videoHeight;
+            }
+
+            ctx.clearRect(
+              0,
+              0,
+              canvas.width,
+              canvas.height
+            );
+
+            // ==================================================
+            // HANDS
+            // ==================================================
+
+            const handsDetected =
+              results.multiHandLandmarks;
+
+            // ==================================================
+            // NO HAND
+            // ==================================================
+
+            if (
+              !handsDetected ||
+              handsDetected.length === 0
+            ) {
+              setHandDetected(false);
 
               setDetectedGesture(null);
+
+              setConfidence(0);
 
               stableFramesRef.current =
                 0;
@@ -733,288 +763,432 @@ export const useMediaPipeHands = (
             }
 
             // ==================================================
-            // CREATE RESULT
+            // HAND FOUND
             // ==================================================
 
-            const result: DetectedGestureResult =
-              {
-                letter,
+            setHandDetected(true);
 
-                confidence:
-                  gestureConfidence,
+            // ==================================================
+            // DRAW
+            // ==================================================
 
-                handCount:
-                  handsDetected.length,
+            for (
+              const landmarks of
+                handsDetected
+            ) {
+              win.drawConnectors!(
+                ctx,
+                landmarks,
+                win.HAND_CONNECTIONS
+              );
 
-                timestamp:
-                  Date.now(),
-              };
+              win.drawLandmarks!(
+                ctx,
+                landmarks
+              );
+            }
 
-            setDetectedGesture(
-              result
+            // ==================================================
+            // FIRST HAND
+            // ==================================================
+
+            const handLandmarks =
+              handsDetected[0];
+
+            // ==================================================
+            // NORMALIZE
+            // ==================================================
+
+            const normalizedLandmarks =
+              normalizeLandmarks(
+                handLandmarks
+              );
+
+            console.log(
+              "Normalized landmarks:",
+              normalizedLandmarks.length
             );
 
+            if (
+              normalizedLandmarks.length !==
+              63
+            ) {
+              console.error(
+                "❌ Expected 63 normalized landmarks, received:",
+                normalizedLandmarks.length
+              );
+
+              return;
+            }
+
             // ==================================================
-            // STABILITY FILTER
+            // ONNX CLASSIFICATION
             // ==================================================
 
-            if (
-              lastGestureRef.current !==
-              letter
-            ) {
-              // New letter
-              lastGestureRef.current =
-                letter;
+            try {
+              const prediction =
+                await predictASL(
+                  normalizedLandmarks
+                );
+
+              const letter =
+                prediction.letter;
+
+              const gestureConfidence =
+                prediction.confidence;
+
+              console.log(
+                `🤖 ASL Prediction: ${letter}`
+              );
+
+              console.log(
+                `🎯 Confidence: ${(gestureConfidence * 100).toFixed(2)}%`
+              );
+
+              // ==================================================
+              // CONFIDENCE
+              // ==================================================
+
+              setConfidence(
+                gestureConfidence
+              );
+
+              // ==================================================
+              // CONFIDENCE THRESHOLD
+              //
+              // Your current model outputs many
+              // predictions around 20-50%.
+              //
+              // Keep this at 0.20 for now.
+              // ==================================================
+
+              const CONFIDENCE_THRESHOLD =
+                0.20;
+
+              if (
+                !letter ||
+                letter === "?" ||
+                letter === "UNKNOWN" ||
+                !Number.isFinite(
+                  gestureConfidence
+                ) ||
+                gestureConfidence <
+                  CONFIDENCE_THRESHOLD
+              ) {
+                console.log(
+                  "⚠️ Gesture rejected because confidence is too low"
+                );
+
+                setDetectedGesture(
+                  null
+                );
+
+                stableFramesRef.current =
+                  0;
+
+                lastGestureRef.current =
+                  null;
+
+                confirmedGestureRef.current =
+                  null;
+
+                return;
+              }
+
+              // ==================================================
+              // RESULT
+              // ==================================================
+
+              const result: DetectedGestureResult =
+                {
+                  letter,
+
+                  confidence:
+                    gestureConfidence,
+
+                  handCount:
+                    handsDetected.length,
+
+                  timestamp:
+                    Date.now(),
+                };
+
+              setDetectedGesture(
+                result
+              );
+
+              // ==================================================
+              // STABILITY
+              // ==================================================
+
+              if (
+                lastGestureRef.current !==
+                letter
+              ) {
+                lastGestureRef.current =
+                  letter;
+
+                stableFramesRef.current =
+                  1;
+
+                confirmedGestureRef.current =
+                  null;
+              } else {
+                stableFramesRef.current++;
+              }
+
+              console.log(
+                `Stable: ${stableFramesRef.current}/6`
+              );
+
+              // ==================================================
+              // CONFIRM
+              // ==================================================
+
+              if (
+                stableFramesRef.current >=
+                  6 &&
+                confirmedGestureRef.current !==
+                  letter
+              ) {
+                console.log(
+                  `🎉 CONFIRMED ASL: ${letter}`
+                );
+
+                confirmedGestureRef.current =
+                  letter;
+
+                setGestureCount(
+                  (previous) =>
+                    previous + 1
+                );
+
+                if (
+                  onGestureDetectedRef.current
+                ) {
+                  onGestureDetectedRef.current(
+                    result
+                  );
+                }
+              }
+            } catch (predictionError) {
+              console.error(
+                "❌ ASL prediction error:",
+                predictionError
+              );
+
+              setDetectedGesture(
+                null
+              );
+
+              setConfidence(0);
 
               stableFramesRef.current =
-                1;
+                0;
+
+              lastGestureRef.current =
+                null;
 
               confirmedGestureRef.current =
                 null;
-            } else {
-              // Same letter
-              stableFramesRef.current++;
             }
+          }
+        );
 
-            console.log(
-              `Stable: ${stableFramesRef.current}/6`
-            );
+        // ====================================================
+        // FRAME LOOP
+        // ====================================================
 
-            // ==================================================
-            // CONFIRM AFTER 6 STABLE FRAMES
-            // ==================================================
-
+        const processFrame =
+          async () => {
             if (
-              stableFramesRef.current >=
-                6 &&
-              confirmedGestureRef.current !==
-                letter
-            ) {
-              console.log(
-                `🎉 CONFIRMED ASL: ${letter}`
-              );
-
-              confirmedGestureRef.current =
-                letter;
-
-              setGestureCount(
-                (previous) =>
-                  previous + 1
-              );
-
-              // Send result to UI
-              if (
-                onGestureDetectedRef.current
-              ) {
-                onGestureDetectedRef.current(
-                  result
-                );
-              }
-            }
-          } catch (predictionError) {
-            console.error(
-              "❌ ASL prediction error:",
-              predictionError
-            );
-
-            setDetectedGesture(null);
-
-            setConfidence(0);
-
-            stableFramesRef.current =
-              0;
-
-            lastGestureRef.current =
-              null;
-
-            confirmedGestureRef.current =
-              null;
-          }
-        }
-      );
-
-      // ======================================================
-      // FRAME LOOP
-      // ======================================================
-
-      const processFrame =
-        async () => {
-          // Stop if old operation
-          if (
-            operationId !==
-            cameraOperationRef.current
-          ) {
-            return;
-          }
-
-          if (
-            !handsRef.current ||
-            !videoRef.current
-          ) {
-            return;
-          }
-
-          // Prevent overlapping MediaPipe calls
-          if (
-            processingFrameRef.current
-          ) {
-            frameRequestRef.current =
-              requestAnimationFrame(
-                processFrame
-              );
-
-            return;
-          }
-
-          // Video needs data
-          if (
-            videoRef.current.readyState <
-            HTMLMediaElement.HAVE_CURRENT_DATA
-          ) {
-            frameRequestRef.current =
-              requestAnimationFrame(
-                processFrame
-              );
-
-            return;
-          }
-
-          processingFrameRef.current =
-            true;
-
-          try {
-            await handsRef.current.send({
-              image:
-                videoRef.current,
-            });
-          } catch (err) {
-            if (
-              operationId ===
+              operationId !==
               cameraOperationRef.current
             ) {
-              console.error(
-                "MediaPipe frame error:",
-                err
-              );
+              return;
             }
-          } finally {
+
+            if (
+              !handsRef.current ||
+              !videoRef.current
+            ) {
+              return;
+            }
+
+            // ==================================================
+            // PREVENT OVERLAPPING FRAMES
+            // ==================================================
+
+            if (
+              processingFrameRef.current
+            ) {
+              frameRequestRef.current =
+                requestAnimationFrame(
+                  processFrame
+                );
+
+              return;
+            }
+
+            // ==================================================
+            // VIDEO READY
+            // ==================================================
+
+            if (
+              videoRef.current
+                .readyState <
+              HTMLMediaElement.HAVE_CURRENT_DATA
+            ) {
+              frameRequestRef.current =
+                requestAnimationFrame(
+                  processFrame
+                );
+
+              return;
+            }
+
             processingFrameRef.current =
-              false;
-          }
+              true;
 
-          // Continue
-          if (
-            operationId ===
-              cameraOperationRef.current &&
-            handsRef.current
-          ) {
-            frameRequestRef.current =
-              requestAnimationFrame(
-                processFrame
+            try {
+              await handsRef.current.send(
+                {
+                  image:
+                    videoRef.current,
+                }
               );
-          }
-        };
+            } catch (frameError) {
+              if (
+                operationId ===
+                cameraOperationRef.current
+              ) {
+                console.error(
+                  "MediaPipe frame error:",
+                  frameError
+                );
+              }
+            } finally {
+              processingFrameRef.current =
+                false;
+            }
 
-      // Start frame processing
-      frameRequestRef.current =
-        requestAnimationFrame(
-          processFrame
+            if (
+              operationId ===
+                cameraOperationRef.current &&
+              handsRef.current
+            ) {
+              frameRequestRef.current =
+                requestAnimationFrame(
+                  processFrame
+                );
+            }
+          };
+
+        // ====================================================
+        // START FRAME LOOP
+        // ====================================================
+
+        frameRequestRef.current =
+          requestAnimationFrame(
+            processFrame
+          );
+
+        // ====================================================
+        // CAMERA READY
+        // ====================================================
+
+        setIsRunning(true);
+
+        setIsLoading(false);
+
+        console.log(
+          "✅ MediaPipe running"
         );
-
-      // ======================================================
-      // CAMERA READY
-      // ======================================================
-
-      setIsRunning(true);
-
-      setIsLoading(false);
-
-      console.log(
-        "✅ MediaPipe running"
-      );
-    } catch (err) {
-      console.error(
-        "❌ Camera error:",
-        err
-      );
-
-      // Ignore old operation errors
-      if (
-        operationId !==
-        cameraOperationRef.current
-      ) {
-        return;
-      }
-
-      const message =
-        err instanceof Error
-          ? err.message
-          : "Failed to start camera";
-
-      setError(message);
-
-      setIsRunning(false);
-
-      setIsLoading(false);
-
-      // ======================================================
-      // CLEAN FRAME
-      // ======================================================
-
-      if (
-        frameRequestRef.current !==
-        null
-      ) {
-        cancelAnimationFrame(
-          frameRequestRef.current
+      } catch (err) {
+        console.error(
+          "❌ Camera error:",
+          err
         );
-
-        frameRequestRef.current = null;
-      }
-
-      processingFrameRef.current =
-        false;
-
-      // ======================================================
-      // CLOSE MEDIAPIPE
-      // ======================================================
-
-      if (handsRef.current?.close) {
-        try {
-          handsRef.current.close();
-        } catch {
-          // Ignore cleanup error
-        }
-      }
-
-      handsRef.current = null;
-
-      // ======================================================
-      // STOP CAMERA
-      // ======================================================
-
-      if (videoRef.current) {
-        const stream =
-          videoRef.current.srcObject;
 
         if (
-          stream instanceof MediaStream
+          operationId !==
+          cameraOperationRef.current
         ) {
-          stream
-            .getTracks()
-            .forEach((track) =>
-              track.stop()
-            );
+          return;
         }
 
-        videoRef.current.srcObject =
-          null;
+        const message =
+          err instanceof Error
+            ? err.message
+            : "Failed to start camera";
+
+        setError(message);
+
+        setIsRunning(false);
+
+        setIsLoading(false);
+
+        // ====================================================
+        // CLEAN FRAME
+        // ====================================================
+
+        if (
+          frameRequestRef.current !==
+          null
+        ) {
+          cancelAnimationFrame(
+            frameRequestRef.current
+          );
+
+          frameRequestRef.current =
+            null;
+        }
+
+        processingFrameRef.current =
+          false;
+
+        // ====================================================
+        // CLOSE MEDIAPIPE
+        // ====================================================
+
+        if (handsRef.current?.close) {
+          try {
+            handsRef.current.close();
+          } catch {
+            // Ignore cleanup
+          }
+        }
+
+        handsRef.current = null;
+
+        // ====================================================
+        // STOP CAMERA
+        // ====================================================
+
+        if (videoRef.current) {
+          const stream =
+            videoRef.current.srcObject;
+
+          if (
+            stream instanceof MediaStream
+          ) {
+            stream
+              .getTracks()
+              .forEach((track) =>
+                track.stop()
+              );
+          }
+
+          videoRef.current.srcObject =
+            null;
+        }
+      } finally {
+        startingCameraRef.current =
+          false;
       }
-    } finally {
-      startingCameraRef.current =
-        false;
-    }
-  }, []);
+    },
+    []
+  );
 
   // ==========================================================
   // STOP CAMERA
@@ -1026,11 +1200,11 @@ export const useMediaPipeHands = (
         "🛑 Stopping camera..."
       );
 
-      // Invalidate async operations
+      // Invalidate old operations
       ++cameraOperationRef.current;
 
       // ========================================================
-      // STOP ANIMATION
+      // STOP FRAME LOOP
       // ========================================================
 
       if (
@@ -1041,7 +1215,8 @@ export const useMediaPipeHands = (
           frameRequestRef.current
         );
 
-        frameRequestRef.current = null;
+        frameRequestRef.current =
+          null;
       }
 
       processingFrameRef.current =
@@ -1054,10 +1229,10 @@ export const useMediaPipeHands = (
       if (handsRef.current?.close) {
         try {
           handsRef.current.close();
-        } catch (err) {
+        } catch (error) {
           console.warn(
             "MediaPipe close warning:",
-            err
+            error
           );
         }
       }
@@ -1088,7 +1263,7 @@ export const useMediaPipeHands = (
         try {
           videoRef.current.pause();
         } catch {
-          // Ignore pause error
+          // Ignore
         }
       }
 
@@ -1113,7 +1288,7 @@ export const useMediaPipeHands = (
       }
 
       // ========================================================
-      // RESET STATE
+      // RESET
       // ========================================================
 
       setIsRunning(false);
@@ -1162,7 +1337,7 @@ export const useMediaPipeHands = (
     }, []);
 
   // ==========================================================
-  // CLEANUP WHEN COMPONENT UNMOUNTS
+  // CLEANUP
   // ==========================================================
 
   useEffect(() => {
@@ -1177,7 +1352,8 @@ export const useMediaPipeHands = (
           frameRequestRef.current
         );
 
-        frameRequestRef.current = null;
+        frameRequestRef.current =
+          null;
       }
 
       processingFrameRef.current =
@@ -1187,7 +1363,7 @@ export const useMediaPipeHands = (
         try {
           handsRef.current.close();
         } catch {
-          // Ignore cleanup error
+          // Ignore
         }
       }
 
