@@ -2,27 +2,111 @@
 <html lang="en">
   <head>
     <meta charset="UTF-8" />
-    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <title>SignSpeak AI - Sign Language to Speech Converter</title>
-    <meta name="description" content="AI-powered sign language translator that converts ASL gestures to natural speech in real-time. Break communication barriers with cutting-edge accessibility technology." />
-    <meta name="author" content="SignSpeak AI" />
-    <meta name="keywords" content="sign language, ASL, speech, accessibility, deaf, hearing impaired, AI, translator, communication" />
 
-    <meta property="og:title" content="SignSpeak AI - Breaking Communication Barriers" />
-    <meta property="og:description" content="Real-time sign language to speech translation powered by AI. Enable seamless communication for deaf and hard-of-hearing individuals." />
-    <meta property="og:type" content="website" />
-    <meta property="og:image" content="https://lovable.dev/opengraph-image-p98pqg.png" />
+    <meta
+      name="viewport"
+      content="width=device-width, initial-scale=1.0"
+    />
 
-    <meta name="twitter:card" content="summary_large_image" />
-    <meta name="twitter:site" content="@SignSpeakAI" />
-    <meta name="twitter:image" content="https://lovable.dev/opengraph-image-p98pqg.png" />
-    <link rel="icon" href="data:," />
-    <link rel="preconnect" href="https://fonts.googleapis.com">
-    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <title>SignSpeak AI - Sign Language to Speech</title>
+
+    <meta
+      name="description"
+      content="SignSpeak AI translates sign language gestures into text and speech in real time using AI and computer vision."
+    />
+
+    <meta
+      name="author"
+      content="SignSpeak AI"
+    />
+
+    <!-- Open Graph -->
+    <meta
+      property="og:title"
+      content="SignSpeak AI - Sign Language to Speech"
+    />
+
+    <meta
+      property="og:description"
+      content="Real-time sign language to speech translation powered by AI and computer vision."
+    />
+
+    <meta
+      property="og:type"
+      content="website"
+    />
+
+    <meta
+      property="og:url"
+      content="https://signlanguage-to-speechconverter.vercel.app/"
+    />
+
+    <meta
+      property="og:image"
+      content="https://signlanguage-to-speechconverter.vercel.app/placeholder.svg"
+    />
+
+    <!-- Twitter -->
+    <meta
+      name="twitter:card"
+      content="summary_large_image"
+    />
+
+    <meta
+      name="twitter:title"
+      content="SignSpeak AI - Sign Language to Speech"
+    />
+
+    <meta
+      name="twitter:description"
+      content="Real-time sign language to speech translation powered by AI."
+    />
+
+    <meta
+      name="twitter:image"
+      content="https://signlanguage-to-speechconverter.vercel.app/placeholder.svg"
+    />
+
+    <!-- Favicon -->
+    <link
+      rel="icon"
+      type="image/png"
+      href="/favicon.png"
+    />
+
+    <!-- Google Fonts -->
+    <link
+      rel="preconnect"
+      href="https://fonts.googleapis.com"
+    />
+
+    <link
+      rel="preconnect"
+      href="https://fonts.gstatic.com"
+      crossorigin
+    />
+
+    <link
+      href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap"
+      rel="stylesheet"
+    />
   </head>
 
   <body>
     <div id="root"></div>
-    <script type="module" src="/src/main.tsx"></script>
+
+    <!-- MediaPipe Hands -->
+    <!--
+      IMPORTANT:
+      Load MediaPipe directly in the browser instead of
+      importing @mediapipe/hands through Vite.
+    -->
+    <script src="/mediapipe-hands/hands.js"></script>
+
+    <!-- React Application -->
+    <script
+      type="module"
+      src="/src/main.tsx"
+    ></script>
   </body>
 </html>

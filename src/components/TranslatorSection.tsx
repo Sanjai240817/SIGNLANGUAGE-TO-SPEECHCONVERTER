@@ -56,12 +56,7 @@ const TranslatorSection = () => {
     }
   }, []);
 
-  // Auto-start session when camera is active
-  useEffect(() => {
-    if (isCameraActive && mode === 'sign-to-speech' && !session) {
-      startSession(`Session ${new Date().toLocaleTimeString()}`);
-    }
-  }, [isCameraActive, mode, session, startSession]);
+  
 
   const handleGestureDetected = useCallback((gestureResult: DetectedGestureResult) => {
     // Debounce: Only log once per gesture every 300ms for faster response
