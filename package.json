@@ -2,6 +2,14 @@
   "dependencies": {
     "@mediapipe/camera_utils": "^0.3.1675466862",
     "@mediapipe/drawing_utils": "^0.3.1675466124",
-    "@mediapipe/hands": "^0.4.1675469240"
+    "@mediapipe/hands": "^0.4.1675469240",
+    "@supabase/supabase-js": "^2.109.0",
+    "cors": "^2.8.6",
+    "dotenv": "^17.4.2",
+    "express": "^5.2.1",
+    "ws": "^8.21.3"
+  },
+  "scripts": {
+    "backend": "node server/index.cjs"
   }
 }
