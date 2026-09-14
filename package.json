@@ -52,6 +52,7 @@
     "zod": "^3.25.76"
   },
   "scripts": {
+    "dev": "vite",
     "backend": "node server/index.cjs",
     "build": "vite build"
   },
