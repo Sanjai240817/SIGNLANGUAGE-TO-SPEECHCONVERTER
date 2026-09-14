@@ -1,4 +1,5 @@
 import { useState, useEffect, useRef } from 'react';
+import { useNavigate } from 'react-router-dom';
 import { motion, AnimatePresence } from 'framer-motion';
 import {
   Play,
@@ -32,50 +33,53 @@ const SessionPanel = ({
   onStartSession,
   onEndSession,
 }: SessionPanelProps) => {
+  const navigate = useNavigate();
+
   const [isExpanded, setIsExpanded] = useState(true);
   const [elapsedTime, setElapsedTime] = useState('00:00');
 
   // Local timer start time
   const timerStartRef = useRef<number | null>(null);
 
-useEffect(() => {
-  if (!session) {
-    timerStartRef.current = null;
+  useEffect(() => {
+    if (!session) {
+      timerStartRef.current = null;
+      setElapsedTime('00:00');
+      return;
+    }
+
+    timerStartRef.current = Date.now();
     setElapsedTime('00:00');
-    return;
-  }
 
-  timerStartRef.current = Date.now();
-  setElapsedTime('00:00');
+    const updateTime = () => {
+      if (timerStartRef.current === null) return;
 
-  const updateTime = () => {
-    if (timerStartRef.current === null) return;
+      const elapsed = Math.floor(
+        (Date.now() - timerStartRef.current) / 1000
+      );
 
-    const elapsed = Math.floor(
-      (Date.now() - timerStartRef.current) / 1000
-    );
+      const minutes = Math.floor(elapsed / 60)
+        .toString()
+        .padStart(2, '0');
 
-    const minutes = Math.floor(elapsed / 60)
-      .toString()
-      .padStart(2, '0');
+      const seconds = (elapsed % 60)
+        .toString()
+        .padStart(2, '0');
 
-    const seconds = (elapsed % 60)
-      .toString()
-      .padStart(2, '0');
+      setElapsedTime(`${minutes}:${seconds}`);
+    };
 
-    setElapsedTime(`${minutes}:${seconds}`);
-  };
+    const interval = setInterval(updateTime, 1000);
 
-  const interval = setInterval(updateTime, 1000);
+    return () => clearInterval(interval);
+  }, [session?.id]);
 
-  return () => clearInterval(interval);
-}, [session?.id]);
   /*
    * Start session
    */
   const handleStartSession = () => {
     console.log('Starting session...');
-    
+
     // Reset timer immediately
     timerStartRef.current = null;
     setElapsedTime('00:00');
@@ -93,6 +97,13 @@ useEffect(() => {
 
     timerStartRef.current = null;
     setElapsedTime('00:00');
+  };
+
+  /*
+   * Open backend/session history dashboard
+   */
+  const handleOpenHistory = () => {
+    navigate('/backend');
   };
 
   return (
@@ -290,13 +301,13 @@ useEffect(() => {
                   </Button>
                 )}
 
+                {/* Session History */}
                 <Button
                   variant="outline"
                   size="lg"
                   className="px-4 hover:bg-muted transition-colors"
-                  onClick={() =>
-                    (window.location.href = '/backend')
-                  }
+                  onClick={handleOpenHistory}
+                  title="Session History"
                 >
                   <History className="w-5 h-5" />
                 </Button>
@@ -338,6 +349,7 @@ useEffect(() => {
                   </div>
                 </div>
               )}
+
             </div>
           </motion.div>
         )}
