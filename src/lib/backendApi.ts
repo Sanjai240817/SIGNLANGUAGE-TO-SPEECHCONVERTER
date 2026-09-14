@@ -1,4 +1,18 @@
-import { supabase } from "@/integrations/supabase/client";
+// =========================================
+// BACKEND API CONFIGURATION
+// =========================================
+
+const BACKEND_URL = import.meta.env.VITE_BACKEND_URL;
+
+if (!BACKEND_URL) {
+  console.warn(
+    "VITE_BACKEND_URL is not configured. Add it to your .env file and Vercel environment variables."
+  );
+}
+
+// =========================================
+// TYPES
+// =========================================
 
 export interface SessionPayload {
   id: string;
@@ -27,64 +41,96 @@ export interface TranscriptPayload {
   created_at: string;
 }
 
-/* -----------------------------------------
-   CREATE SESSION
------------------------------------------ */
+// =========================================
+// HELPER FUNCTION
+// =========================================
+
+const apiRequest = async <T>(
+  endpoint: string,
+  options?: RequestInit
+): Promise<T> => {
+  if (!BACKEND_URL) {
+    throw new Error(
+      "Backend URL is not configured. Please set VITE_BACKEND_URL."
+    );
+  }
+
+  const response = await fetch(`${BACKEND_URL}${endpoint}`, {
+    ...options,
+    headers: {
+      "Content-Type": "application/json",
+      ...(options?.headers || {}),
+    },
+  });
+
+  if (!response.ok) {
+    let errorMessage = `Backend request failed: ${response.status}`;
+
+    try {
+      const errorData = await response.json();
+
+      if (errorData?.error) {
+        errorMessage = errorData.error;
+      }
+    } catch {
+      // Ignore JSON parsing error
+    }
+
+    throw new Error(errorMessage);
+  }
+
+  return response.json();
+};
+
+// =========================================
+// CREATE SESSION
+// =========================================
 
 export const createSession = async (
   sessionName?: string
 ): Promise<SessionPayload> => {
-  console.log("Creating session...");
+  console.log("Creating session through Render backend...");
 
-  const { data, error } = await supabase
-    .from("gesture_sessions")
-    .insert({
+  const data = await apiRequest<SessionPayload>("/api/sessions", {
+    method: "POST",
+    body: JSON.stringify({
       session_name:
         sessionName ||
         `Session ${new Date().toLocaleTimeString()}`,
-    })
-    .select()
-    .single();
-
-  if (error) {
-    console.error("Supabase create session error:", error);
-    throw new Error(error.message);
-  }
+    }),
+  });
 
   console.log("Session created:", data);
 
   return data;
 };
 
-/* -----------------------------------------
-   END SESSION
------------------------------------------ */
+// =========================================
+// END SESSION
+// =========================================
 
 export const endSession = async (
   sessionId: string,
   totalGestures: number
 ): Promise<SessionPayload> => {
-  const { data, error } = await supabase
-    .from("gesture_sessions")
-    .update({
-      ended_at: new Date().toISOString(),
-      total_gestures: totalGestures,
-    })
-    .eq("id", sessionId)
-    .select()
-    .single();
+  const data = await apiRequest<SessionPayload>(
+    `/api/sessions/${sessionId}/end`,
+    {
+      method: "PUT",
+      body: JSON.stringify({
+        total_gestures: totalGestures,
+      }),
+    }
+  );
 
-  if (error) {
-    console.error("Supabase end session error:", error);
-    throw new Error(error.message);
-  }
+  console.log("Session ended:", data);
 
   return data;
 };
 
-/* -----------------------------------------
-   LOG GESTURE
------------------------------------------ */
+// =========================================
+// LOG GESTURE
+// =========================================
 
 export const logGesture = async (
   sessionId: string,
@@ -92,121 +138,82 @@ export const logGesture = async (
   gestureDescription: string | null,
   confidence: number
 ): Promise<GestureLogPayload> => {
-  const { data, error } = await supabase
-    .from("gesture_logs")
-    .insert({
+  const data = await apiRequest<GestureLogPayload>("/api/gestures", {
+    method: "POST",
+    body: JSON.stringify({
       session_id: sessionId,
       gesture_name: gestureName,
       gesture_description: gestureDescription,
       confidence,
-    })
-    .select()
-    .single();
+    }),
+  });
 
-  if (error) {
-    console.error("Supabase gesture error:", error);
-    throw new Error(error.message);
-  }
+  console.log("Gesture logged:", data);
 
   return data;
 };
 
-/* -----------------------------------------
-   SAVE TRANSCRIPT
------------------------------------------ */
+// =========================================
+// SAVE TRANSCRIPT
+// =========================================
 
 export const saveTranscript = async (
   sessionId: string | null,
   originalText: string,
   convertedSigns: string[]
 ): Promise<TranscriptPayload> => {
-  const { data, error } = await supabase
-    .from("speech_transcripts")
-    .insert({
+  const data = await apiRequest<TranscriptPayload>("/api/transcripts", {
+    method: "POST",
+    body: JSON.stringify({
       session_id: sessionId,
       original_text: originalText,
       converted_signs: convertedSigns,
-    })
-    .select()
-    .single();
+    }),
+  });
 
-  if (error) {
-    console.error("Supabase transcript error:", error);
-    throw new Error(error.message);
-  }
+  console.log("Transcript saved:", data);
 
   return data;
 };
 
-/* -----------------------------------------
-   FETCH SESSIONS
------------------------------------------ */
+// =========================================
+// FETCH SESSIONS
+// =========================================
 
 export const fetchSessions = async (): Promise<
   SessionPayload[]
 > => {
-  const { data, error } = await supabase
-    .from("gesture_sessions")
-    .select("*")
-    .order("started_at", {
-      ascending: false,
-    })
-    .limit(100);
-
-  if (error) {
-    console.error("Supabase fetch sessions error:", error);
-    throw new Error(error.message);
-  }
+  const data = await apiRequest<SessionPayload[]>(
+    "/api/sessions"
+  );
 
   return data || [];
 };
 
-/* -----------------------------------------
-   FETCH GESTURES
------------------------------------------ */
+// =========================================
+// FETCH GESTURE LOGS
+// =========================================
 
 export const fetchGestureLogs = async (): Promise<
   GestureLogPayload[]
 > => {
-  const { data, error } = await supabase
-    .from("gesture_logs")
-    .select("*")
-    .order("detected_at", {
-      ascending: false,
-    })
-    .limit(200);
-
-  if (error) {
-    console.error("Supabase fetch gestures error:", error);
-    throw new Error(error.message);
-  }
+  const data = await apiRequest<GestureLogPayload[]>(
+    "/api/gestures"
+  );
 
   return data || [];
 };
 
-/* -----------------------------------------
-   FETCH TRANSCRIPTS
------------------------------------------ */
+// =========================================
+// FETCH TRANSCRIPTS
+// =========================================
 
 export const fetchTranscripts = async (): Promise<
   TranscriptPayload[]
 > => {
-  const { data, error } = await supabase
-    .from("speech_transcripts")
-    .select("*")
-    .order("created_at", {
-      ascending: false,
-    })
-    .limit(200);
-
-  if (error) {
-    console.error(
-      "Supabase fetch transcripts error:",
-      error
-    );
-
-    throw new Error(error.message);
-  }
+  const data = await apiRequest<TranscriptPayload[]>(
+    "/api/transcripts"
+  );
 
   return data || [];
 };
