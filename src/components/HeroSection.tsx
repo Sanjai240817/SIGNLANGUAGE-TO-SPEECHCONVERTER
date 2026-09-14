@@ -34,9 +34,13 @@ const HeroSection = ({ onGetStarted }: HeroSectionProps) => {
           <nav className="hidden md:flex items-center gap-8">
             <a href="#features" className="text-muted-foreground hover:text-foreground transition-colors">Features</a>
             <a href="#translator" className="text-muted-foreground hover:text-foreground transition-colors">Translator</a>
-            <a href="/backend" className="text-muted-foreground hover:text-foreground transition-colors flex items-center gap-1">
+            <a
+              href="https://signlanguage-to-speechconverter.onrender.com"
+              target="_blank"
+              rel="noopener noreferrer"
+              className="text-muted-foreground hover:text-foreground transition-colors flex items-center gap-1">
               <Database className="w-4 h-4" />
-              Dashboard
+               Dashboard
             </a>
           </nav>
         </motion.div>
